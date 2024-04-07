@@ -1,72 +1,96 @@
 ﻿using System;
+using System.Collections.Generic;
+using LegacyApp;
 
 namespace LegacyApp
 {
     public class UserService
     {
         public bool AddUser(string firstName, string lastName, string email, DateTime dateOfBirth, int clientId)
-        {
-            if (string.IsNullOrEmpty(firstName) || string.IsNullOrEmpty(lastName))
-            {
+        {   //BL walidacja
+            var manager = new UserDataManager(firstName, lastName, dateOfBirth, email);
+            bool correct = ConfirmUserData(manager);
+            if (!correct)
                 return false;
-            }
-
-            if (!email.Contains("@") && !email.Contains("."))
-            {
-                return false;
-            }
-
-            var now = DateTime.Now;
-            int age = now.Year - dateOfBirth.Year;
-            if (now.Month < dateOfBirth.Month || (now.Month == dateOfBirth.Month && now.Day < dateOfBirth.Day)) age--;
-
-            if (age < 21)
-            {
-                return false;
-            }
-
-            var clientRepository = new ClientRepository();
-            var client = clientRepository.GetById(clientId);
-
-            var user = new User
-            {
-                Client = client,
-                DateOfBirth = dateOfBirth,
-                EmailAddress = email,
-                FirstName = firstName,
-                LastName = lastName
-            };
             
-            if (client.Type == "VeryImportantClient")
-            {
-                user.HasCreditLimit = false;
-            }
-            else if (client.Type == "ImportantClient")
-            {
-                using (var userCreditService = new UserCreditService())
-                {
-                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
-                    creditLimit = creditLimit * 2;
-                    user.CreditLimit = creditLimit;
-                }
-            }
-            else
-            {
-                user.HasCreditLimit = true;
-                using (var userCreditService = new UserCreditService())
-                {
-                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
-                    user.CreditLimit = creditLimit;
-                }
-            }
             
-            if (user.HasCreditLimit && user.CreditLimit < 500)
-            {
+            var client = GetClient(new ClientRepository(), firstName, lastName, dateOfBirth, email, clientId);
+        
+            //uzyc inteface zrobic liste objektow je implementujacych OPEN CLOSE principle 
+            
+            client.SetUpClient(new UserCreditService());
+            
+            
+            bool isAddUser = manager.ClientCreditValidation(client);
+            if (!isAddUser)
                 return false;
-            }
-
-            UserDataAccess.AddUser(user);
+            //IO
+            UserDataAccess.AddUser(client);
             return true;
         }
+
+        private User GetClient(IRepository repository, string firstName, string lastName, DateTime dateOfBirth, 
+            string email, int clientId)
+        {
+            var client = repository.GetById(clientId);
+            client.DateOfBirth = dateOfBirth; 
+            client.EmailAddress = email;
+            client.FirstName = firstName;
+            client.LastName = lastName;
+            return client;
+        }
+
+        private bool ConfirmUserData(IManager manager)
+        {
+            return manager.ValidateUserData();
+        }
+    }
+}
+
+internal class UserDataManager : IManager
+{
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public string Email { get; set; }
+    public DateTime DateOfBirth { get; set; }
+    public UserDataManager(string firstName, string lastName, DateTime dateOfBirth, string email)
+    {
+        this.FirstName = firstName;
+        this.LastName = lastName;
+        this.Email = email;
+        this.DateOfBirth = dateOfBirth;
+    }
+    public bool ValidateUserData()
+    {
+        if (string.IsNullOrEmpty(this.FirstName) || string.IsNullOrEmpty(this.LastName))
+        {
+            return false;
+        }
+
+        if (!this.Email.Contains("@") && !this.Email.Contains("."))
+        {
+            return false;
+        }
+            
+        var now = DateTime.Now;
+        int age = now.Year - this.DateOfBirth.Year;
+        if (now.Month < this.DateOfBirth.Month || (now.Month == this.DateOfBirth.Month && now.Day < this.DateOfBirth.Day)) age--;
+
+        if (age < 21)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public bool ClientCreditValidation(User client)
+    {
+        if (client.HasCreditLimit && client.CreditLimit < 500)
+        {
+            return false;
+        }
+
+        return true;
     }
 }
